@@ -1,0 +1,77 @@
+version: '3.1'
+
+networks:
+  spring-cloud-network:
+    driver: bridge
+
+services:
+  db:
+    image: mysql:latest
+    container_name: db
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    expose:
+      - 3306
+#    ports:
+#      - 3306:3306
+    networks:
+      - spring-cloud-network
+    entrypoint:
+      sh -c "
+      echo 'CREATE DATABASE IF NOT EXISTS movie_service; CREATE DATABASE IF NOT EXISTS review_service;' > /docker-entrypoint-initdb.d/init.sql;
+      /usr/local/bin/docker-entrypoint.sh --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+      "
+
+  discovery:
+    container_name: discovery
+    build:
+      context: ./eureka-server/
+      dockerfile: ./../Dockerfile
+    image: discovery:latest
+    expose:
+      - 8761
+    ports:
+      - 8761:8761
+    networks:
+      - spring-cloud-network
+
+  platform-service:
+    container_name: platform-service
+    build:
+      context: ./platform-service/
+      dockerfile: ./../Dockerfile
+    image: platform-service:latest
+    expose:
+      - 9001
+    ports:
+      - 9001:9001
+    networks:
+      - spring-cloud-network
+    links:
+      - discovery:discovery
+    environment:
+      EUREKA_SERVER: http://discovery:8761/eureka
+    depends_on:
+      - discovery
+
+  movie-service:
+    container_name: movie-service
+    build:
+      context: ./movie-service/
+      dockerfile: ./../Dockerfile
+    image: movies-service:latest
+    expose:
+      - 9002
+    networks:
+      - spring-cloud-network
+    links:
+      - db:db
+      - discovery:discovery
+    environment:
+      EUREKA_SERVER: http://discovery:8761/eureka
+      DATASOURCE_URL: jdbc:mysql://db:3306/movie_service
+    depends_on:
+      - db
+      - discovery
